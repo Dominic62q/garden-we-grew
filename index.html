@@ -185,7 +185,7 @@ body.nogl-on .nogl{display:flex}
   scene.fog = new THREE.Fog(0xffd4b0, 38, 170);
   var hemi = new THREE.HemisphereLight(0xffffff, 0x6a7a48, .75); scene.add(hemi);
   var sunL = new THREE.DirectionalLight(0xffffff, 1); sunL.position.set(22, 40, 16); scene.add(sunL); scene.add(sunL.target);
-  sunL.castShadow = true; sunL.shadow.mapSize.set(1024, 1024); sunL.shadow.bias = -.0006; sunL.shadow.normalBias = .04;
+  sunL.castShadow = true; sunL.shadow.mapSize.set(reduce ? 1024 : 2048, reduce ? 1024 : 2048); sunL.shadow.bias = -.0006; sunL.shadow.normalBias = .04;
   var shc = sunL.shadow.camera; shc.left = -13; shc.right = 13; shc.top = 13; shc.bottom = -13; shc.near = 1; shc.far = 110; shc.updateProjectionMatrix();
 
   /* ---------- sky ---------- */
@@ -193,12 +193,19 @@ body.nogl-on .nogl{display:flex}
     uniforms: UNI, side: THREE.BackSide, depthWrite: false, depthTest: false,
     vertexShader: 'varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }',
     fragmentShader: [
-      'uniform vec3 uTop, uMid, uHor; uniform float uSunH; varying vec3 vD;',
+      'uniform vec3 uTop, uMid, uHor; uniform float uSunH, uTime; varying vec3 vD;',
+      'float hs(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }',
+      'float ns(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f); return mix(mix(hs(i), hs(i+vec2(1.,0.)), f.x), mix(hs(i+vec2(0.,1.)), hs(i+vec2(1.,1.)), f.x), f.y); }',
+      'float fbm(vec2 p){ float a = .5, t = 0.; for (int k = 0; k < 4; k++) { t += a*ns(p); p = p*2.03 + vec2(7.1,3.3); a *= .5; } return t; }',
       'void main(){ vec3 d = normalize(vD); float y = d.y;',
       ' vec3 col = mix(uHor, uMid, smoothstep(0.,.2,y)); col = mix(col, uTop, smoothstep(.12,.65,y));',
       ' col = mix(uHor*.92, col, smoothstep(-.3,.03,y));',
       ' vec3 sd = normalize(vec3(.3,uSunH,-1.)); float s = max(dot(d,sd),0.);',
       ' col += vec3(1.,.8,.5)*(pow(s,40.)*.22 + pow(s,600.)*.7);',
+      ' if (y > 0.) { vec2 cp = d.xz/(y + .14)*1.25 + vec2(uTime*.007, uTime*.002); float n = fbm(cp);',
+      '  float c = smoothstep(.5, .8, n)*smoothstep(.02, .24, y);',
+      '  vec3 cc = mix(uHor*1.04 + .06, vec3(1.), .5)*(.86 + .3*smoothstep(.5, .95, n)) + vec3(1.,.78,.5)*pow(s, 5.)*.3;',
+      '  col = mix(col, min(cc, vec3(.97)), c*.58); }',
       ' gl_FragColor = vec4(col,1.); }'
     ].join('\n')
   });
@@ -212,18 +219,29 @@ body.nogl-on .nogl{display:flex}
       var x = (Math.random() - .5) * 150, z = 20 - Math.random() * 124, d = distPath(x, z);
       if (d < 8.5 || d > 46) continue; tp.push([x, z, d]);
     }
-    var trunkG = new THREE.CylinderGeometry(.22, .36, 2.6, 5); trunkG.translate(0, 1.3, 0);
-    var trunks = new THREE.InstancedMesh(trunkG, new THREE.MeshLambertMaterial({ flatShading: true, color: 0x6b4a34 }), tp.length);
-    var foli = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshLambertMaterial({ flatShading: true }), tp.length * 3);
+    var trunkG = new THREE.CylinderGeometry(.2, .38, 2.6, 9); trunkG.translate(0, 1.3, 0);
+    var trunks = new THREE.InstancedMesh(trunkG, new THREE.MeshLambertMaterial({ color: 0x6b4a34 }), tp.length);
+    var BL = 5, crownG = new THREE.IcosahedronGeometry(1, reduce ? 3 : 5);
+    (function () { // leafy lumps: push each vertex in or out along its direction, keep smooth normals, darken the underside
+      var ps = crownG.attributes.position, nr = crownG.attributes.normal, cl = new Float32Array(ps.count * 3), v = new V3();
+      for (var q = 0; q < ps.count; q++) {
+        v.fromBufferAttribute(ps, q).normalize();
+        var b1 = Math.sin(v.x * 5.1 + 1.3) * Math.sin(v.y * 4.7 + .4) * Math.sin(v.z * 5.3 + 2.1), b2 = Math.sin(v.x * 11.3 + v.y * 9.1) * Math.sin(v.z * 10.7 - v.y * 8.3 + 1.7);
+        var rr = 1 + b1 * .2 + b2 * .07, sh = .62 + .38 * sstep(-.75, .7, v.y) + b1 * .1 + b2 * .06;
+        ps.setXYZ(q, v.x * rr, v.y * rr * .9, v.z * rr); nr.setXYZ(q, v.x, v.y, v.z); cl[q * 3] = sh; cl[q * 3 + 1] = sh; cl[q * 3 + 2] = sh * .96 + .02;
+      }
+      crownG.setAttribute('color', new THREE.BufferAttribute(cl, 3));
+    })();
+    var foli = new THREE.InstancedMesh(crownG, new THREE.MeshLambertMaterial({ vertexColors: true }), tp.length * BL);
     var greens = [[.25, .5, .2], [.34, .6, .25], [.2, .42, .22]], pinks = [[1, .72, .8], [.98, .6, .72], [1, .84, .88]], c = new THREE.Color();
     tp.forEach(function (t, n) {
       var s = 1 + Math.random() * .9, y = terrainH(t[0], t[1], t[2]);
       dummy.position.set(t[0], y, t[1]); dummy.scale.set(s, s, s); dummy.rotation.set(0, Math.random() * 6, 0); dummy.updateMatrix(); trunks.setMatrixAt(n, dummy.matrix);
-      var pal = t[1] < -62 ? pinks : greens, blobs = [[0, 3, 0, 1.6], [.95, 2.4, .3, 1.1], [-.8, 2.6, -.4, 1.2]];
-      for (var b = 0; b < 3; b++) {
+      var pal = t[1] < -62 ? pinks : greens, blobs = [[0, 3, 0, 1.55], [.95, 2.45, .3, 1.1], [-.85, 2.6, -.4, 1.2], [.15, 3.75, -.35, .95], [-.2, 2.3, .8, 1]];
+      for (var b = 0; b < BL; b++) {
         var bl = blobs[b], cc = pal[(Math.random() * 3) | 0];
         dummy.position.set(t[0] + bl[0] * s, y + bl[1] * s, t[1] + bl[2] * s); dummy.scale.setScalar(bl[3] * s); dummy.rotation.set(Math.random() * 3, Math.random() * 3, 0); dummy.updateMatrix();
-        foli.setMatrixAt(n * 3 + b, dummy.matrix); c.setRGB(cc[0], cc[1], cc[2]); foli.setColorAt(n * 3 + b, c);
+        foli.setMatrixAt(n * BL + b, dummy.matrix); var jj = .92 + Math.random() * .2; c.setRGB(cc[0] * jj, cc[1] * jj, cc[2] * jj); foli.setColorAt(n * BL + b, c);
       }
     });
     trunks.castShadow = true; foli.castShadow = true; scene.add(trunks); scene.add(foli);
@@ -252,7 +270,7 @@ body.nogl-on .nogl{display:flex}
       ].join('\n'),
       fragmentShader: [
         SHADE, 'varying float vH; varying float vR; varying float vD;',
-        'void main(){ vec3 col = mix(vec3(.09,.22,.06), vec3(.6,.82,.28), vH*vH*.6 + vH*.4)*(.82 + .3*vR)*tint();',
+        'void main(){ vec3 col = mix(vec3(.09,.22,.06), vec3(.6,.82,.28), vH*vH*.6 + vH*.4)*(.82 + .3*vR)*tint(); col += uSunCol*vec3(.16,.15,.05)*pow(vH, 5.)*(1. - .6*uDusk);',
         ' col = mix(col, uHor, smoothstep(uFogNear, uFogFar, vD)); gl_FragColor = vec4(col, 1.); }'
       ].join('\n')
     }));
@@ -397,7 +415,7 @@ body.nogl-on .nogl{display:flex}
     var wood = new THREE.MeshLambertMaterial({ color: 0xfff1e2, flatShading: true }), leaf = new THREE.MeshLambertMaterial({ color: 0x4f9a40, flatShading: true });
     [-1.9, 1.9].forEach(function (x) { var p = new THREE.Mesh(new THREE.CylinderGeometry(.1, .13, 3.1, 6), wood); p.position.set(x, 1.55, 0); archG.add(p); });
     var arc = new THREE.Mesh(new THREE.TorusGeometry(1.9, .11, 6, 28, Math.PI), leaf); arc.position.y = 3.1; archG.add(arc);
-    var NR = 110, roses = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.15, 0), new THREE.MeshLambertMaterial({ flatShading: true }), NR), d = new THREE.Object3D(), c = new THREE.Color();
+    var NR = 110, roses = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.15, 1), new THREE.MeshLambertMaterial({ flatShading: true }), NR), d = new THREE.Object3D(), c = new THREE.Color();
     var rc = [0xff5a78, 0xff8aa0, 0xfff0e6, 0xe8334a, 0xffb3c0];
     for (var i = 0; i < NR; i++) {
       var side = i % 5 === 0;
@@ -529,6 +547,9 @@ body.nogl-on .nogl{display:flex}
           '  col = col/7.*(1.+uZoom*.4);',
           ' } else col = vec3(texture2D(tDiffuse, vUv+off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv-off).b);',
           ' col *= 1. - min(.97, smoothstep(.12,.6,r)*.42*uVig);',
+          ' col = mix(col, col*col*(3. - 2.*col), .26);',
+          ' float lum = dot(col, vec3(.299,.587,.114)); col = mix(vec3(lum), col, 1.07);',
+          ' col += vec3(.028,.012,-.02)*smoothstep(.45, 1., lum) + vec3(-.012,.0,.02)*(1. - smoothstep(0., .45, lum));',
           ' col = mix(col, uFlashCol, uFlash);',
           ' col += (h(vUv*1280. + fract(uTime)*91.) - .5)*.035;',
           ' gl_FragColor = vec4(col,1.); }'
