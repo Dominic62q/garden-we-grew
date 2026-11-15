@@ -811,19 +811,19 @@ body.nogl-on .nogl{display:flex}
 
 
   /* ---------- sound: soft pad, chimes, cute babble while they talk, heartbeat ---------- */
-  var ac = null, master = null, muted = false, beatT0 = 0, beatTimer = null;
+  var VOL = .3, ac = null, master = null, muted = false, beatT0 = 0, beatTimer = null;
   function startAudio() {
     if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
     try {
       ac = new (window.AudioContext || window.webkitAudioContext)();
       master = ac.createGain(); master.gain.value = 0; master.connect(ac.destination);
-      var lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.connect(master);
+      var lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 650; lp.connect(master);
       [146.83, 220, 277.18, 329.63, 440].forEach(function (f, n) {
-        var o = ac.createOscillator(); o.type = n % 2 ? 'sine' : 'triangle'; o.frequency.value = f; o.detune.value = (n - 2) * 4;
-        var g = ac.createGain(); g.gain.value = .05; o.connect(g); g.connect(lp); o.start();
-        var l = ac.createOscillator(), lg = ac.createGain(); l.frequency.value = .05 + n * .017; lg.gain.value = .025; l.connect(lg); lg.connect(g.gain); l.start();
+        var o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = f; o.detune.value = (n - 2) * 4;
+        var g = ac.createGain(); g.gain.value = .018; o.connect(g); g.connect(lp); o.start();
+        var l = ac.createOscillator(), lg = ac.createGain(); l.frequency.value = .05 + n * .017; lg.gain.value = .008; l.connect(lg); lg.connect(g.gain); l.start();
       });
-      master.gain.linearRampToValueAtTime(muted ? 0 : .55, ac.currentTime + 4);
+      master.gain.linearRampToValueAtTime(muted ? 0 : VOL, ac.currentTime + 6);
     } catch (e) { ac = null; }
   }
   function chime(freqs, vol) {
@@ -831,7 +831,7 @@ body.nogl-on .nogl{display:flex}
     freqs.forEach(function (f, n) {
       var t = ac.currentTime + .1 + n * .13, o = ac.createOscillator(), g = ac.createGain();
       o.type = 'sine'; o.frequency.value = f; g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(vol || .07, t + .03); g.gain.exponentialRampToValueAtTime(.0005, t + 2.6);
+      g.gain.linearRampToValueAtTime(vol || .05, t + .03); g.gain.exponentialRampToValueAtTime(.0005, t + 2.6);
       o.connect(g); g.connect(master); o.start(t); o.stop(t + 2.8);
     });
   }
@@ -841,7 +841,7 @@ body.nogl-on .nogl{display:flex}
     for (var k = 0; k < n; k++) {
       var t = ac.currentTime + .05 + k * .08, o = ac.createOscillator(), g = ac.createGain();
       o.type = 'triangle'; o.frequency.value = scale[(Math.random() * scale.length) | 0] * base;
-      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.045, t + .008); g.gain.exponentialRampToValueAtTime(.0005, t + .1);
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.03, t + .008); g.gain.exponentialRampToValueAtTime(.0005, t + .1);
       o.connect(g); g.connect(master); o.start(t); o.stop(t + .12);
     }
   }
@@ -853,7 +853,7 @@ body.nogl-on .nogl{display:flex}
   }
   function startBeat() {
     beatT0 = performance.now(); stopBeat();
-    function tick() { if (ac && !muted) { var t = ac.currentTime + .02; thump(t, .22); thump(t + .22, .14); } }
+    function tick() { if (ac && !muted) { var t = ac.currentTime + .02; thump(t, .16); thump(t + .22, .1); } }
     tick(); beatTimer = setInterval(tick, 1100);
   }
   function stopBeat() { if (beatTimer) { clearInterval(beatTimer); beatTimer = null; } }
@@ -862,7 +862,7 @@ body.nogl-on .nogl{display:flex}
     e.stopPropagation(); muted = !muted; startAudio();
     snd.classList.toggle('muted', muted); snd.setAttribute('aria-pressed', String(muted));
     snd.setAttribute('aria-label', muted ? 'Turn sound on' : 'Turn sound off');
-    if (master) master.gain.linearRampToValueAtTime(muted ? 0 : .55, ac.currentTime + .6);
+    if (master) master.gain.linearRampToValueAtTime(muted ? 0 : VOL, ac.currentTime + .6);
   });
 
 
